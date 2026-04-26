@@ -231,6 +231,14 @@ TTEntry& probe(uint64_t hash) {
     return tt[hash & TT_MASK];
 }
 
+int TToccupancy() {
+    int count = 0;
+    for (int i = 0; i < 1000; i++) {
+        if (tt[i].key != 0) count++;
+    }
+    return count;
+}
+
 int full_move = 0;
 
 /* === Classes === */
@@ -310,7 +318,7 @@ class Board {
         }
 
         void printBoard() {
-            std::cout << "\n+---+---+---+---+---+---+---+---+\n";
+            std::cout << "\n╔═══╦═══╦═══╦═══╦═══╦═══╦═══╦═══╗\n";
             for (int r = 0; r < 8; r++) {
                 for (int f = 0; f < 8; f++) {
                     int p = mailbox[indexTable[r * 8 + f]];
@@ -318,8 +326,8 @@ class Board {
                     if (p == 0) symbol = pieceToChar[0];
                     else if (p > 0) symbol = pieceToChar[p];
                     else symbol = pieceToChar[-p + 6];
-                    std::cout << "| " << symbol << " ";
-                }   std::cout << "| " << (8 - r) <<"\n+---+---+---+---+---+---+---+---+\n";
+                    std::cout << "║ " << symbol << " ";
+                }   std::cout << "║ " << (8 - r) << ((r < 7) ? "\n╠═══╬═══╬═══╬═══╬═══╬═══╬═══╬═══╣ \n" : "\n╚═══╩═══╩═══╩═══╩═══╩═══╩═══╩═══╝ \n");
             }
             std::cout << "  a   b   c   d   e   f   g   h\n\n";
             std::cout << "Fen: "<< toFen() << std::endl;
@@ -1286,7 +1294,7 @@ class Search {
                 rootDepth = d;
                 int score = search(d, -INF, INF);
                 lastBest = bestMove;
-                std::cout << "Nodes: " << nodes << " depth: " << d << " best: " << board.decodeMoveInt(lastBest) << std::endl;
+                std::cout << "Nodes: " << nodes << " depth: " << d << " best: " << board.decodeMoveInt(lastBest) << " hashfull: " << TToccupancy() << std::endl;
             }
 
             return bestMove;
@@ -1296,13 +1304,30 @@ class Search {
 
 /* ==== Main ====*/
 int main() {
-    std::cout << THEME << "Fih³ chess engine \n";
+    std::cout << "\n" << THEME;
     Board board;
     board.initBB();
     moveGen mg(board);
     board.loadFEN(defaultBoard);
     Eval eval(board);
     Search search(board, mg, eval);
+
+    std::cout << "          ╔═════════════════════════════╗\n";
+    std::cout << "          ║                             ║\n";
+    std::cout << "          ║        __    ___            ║\n";
+    std::cout << "          ║       69M68b `MM            ║\n";
+    std::cout << "          ║      6M' Y89  MM            ║\n";
+    std::cout << "          ║     _MM_____  MM  __        ║\n";
+    std::cout << "          ║     MMMMM`MM  MM 6MMb       ║\n";
+    std::cout << "          ║      MM   MM  MMM9 `Mb      ║\n";
+    std::cout << "          ║      MM   MM  MM'   MM      ║\n";
+    std::cout << "          ║      MM   MM  MM    MM      ║\n";
+    std::cout << "          ║      MM   MM  MM    MM      ║\n";
+    std::cout << "          ║      MM   MM  MM    MM      ║\n";
+    std::cout << "          ║     _MM_ _MM__MM_  _MM_     ║\n";
+    std::cout << "          ║                             ║\n";
+    std::cout << "          ╚═════════════════════════════╝\n\n";
+    std::cout << "           fih³ v0.1 - by Rostik Katayev\n";
 
     board.printBoard();
 
