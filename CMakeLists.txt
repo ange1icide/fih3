@@ -8,7 +8,12 @@ set(CMAKE_CXX_FLAGS_RELEASE
      -funroll-loops -fno-exceptions -fomit-frame-pointer"
 )
 
-add_executable(fih3 old.cpp)
+add_executable(fih3
+        src/main.cpp
+        src/board.cpp
+)
+
+target_include_directories(fih3 PRIVATE src/include)
 
 target_compile_options(fih3 PRIVATE
         $<$<CONFIG:Release>:
