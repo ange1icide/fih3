@@ -7,7 +7,7 @@
 using Bitboard = uint64_t;
 using Square = int;
 using Move = uint32_t;
-using File = int;
+using Rank = int;
 
 enum Color : int { WHITE, BLACK };
 enum Piece : int { PAWN = 1, KNIGHT, BISHOP, ROOK, QUEEN, KING };
@@ -21,10 +21,10 @@ constexpr int DRAW_SCORE =  0;
 
 constexpr std::array<int, 6> PIECE_VALUES = { 100, 320, 330, 500, 900, 0 };
 
+constexpr File fileOf(Square sq) { return File(sq % 8); }
+constexpr Rank rankOf(Square sq) { return Rank(sq / 8); }
 constexpr Square makeSquare(File f, Rank r) { return r * 8 + f; }
-constexpr File   fileOf(Square sq)          { return File(sq % 8); }
-constexpr Rank   rankOf(Square sq)          { return Rank(sq / 8); }
-constexpr Color  flipColor(Color c)         { return Color(c ^ 1); }
+constexpr Color  flipColor(Color c) { return Color(c ^ 1); }
 constexpr int PIECE_OFFSET = 7;
 
 enum Squares : int {

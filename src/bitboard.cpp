@@ -1,5 +1,5 @@
-//
-// Created by crystal on 4/26/26.
-//
+#include "bitboard.h"
 
-#include "include/bitboard.h"
+void init() {
+
+}
