@@ -736,7 +736,6 @@ class Board {
         }
 
         Bitboard getCheckers(Color side) {
-
             int sq = __builtin_ctzll(pieces(side, KING));
             Color enemy = (Color)(side ^ 1);
             Bitboard checkers = 0;

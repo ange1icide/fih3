@@ -77,6 +77,189 @@ constexpr int bishopShifts[64] = {
 };
 
 /* === Functions === */
-void init() {
+Bitboard indexToOccupancy(int index, int numBits, Bitboard mask) {
+    Bitboard occupancy = 0;
+    for (int i = 0; i < numBits; i++) {
+        int bitPos = __builtin_ctzll(mask);
+        mask &= mask - 1;
+        if (index & (1 << i)) { occupancy |= (1ULL << bitPos); }
+    }
+    return occupancy;
+}
 
+Bitboard computeRookAttacks(int sq, Bitboard occ) {
+    Bitboard attacks = 0;
+    int r = sq / 8;
+    int f = sq % 8;
+
+    for (int i = r + 1; i <= 7; i++) { attacks |= (1ULL << (i * 8 + f)); if (occ & (1ULL << (i * 8 + f))) break; }
+    for (int i = r - 1; i >= 0; i--) { attacks |= (1ULL << (i * 8 + f)); if (occ & (1ULL << (i * 8 + f))) break; }
+    for (int j = f + 1; j <= 7; j++) { attacks |= (1ULL << (r * 8 + j)); if (occ & (1ULL << (r * 8 + j))) break; }
+    for (int j = f - 1; j >= 0; j--) { attacks |= (1ULL << (r * 8 + j)); if (occ & (1ULL << (r * 8 + j))) break; }
+
+    return attacks;
+}
+
+Bitboard computeBishopAttacks(int sq, Bitboard occ) {
+    Bitboard attacks = 0;
+    int r = sq / 8;
+    int f = sq % 8;
+
+    for (int tr = r + 1, tf = f + 1; tr <= 7 && tf <= 7; tr++, tf++) { attacks |= 1ULL << (tr * 8 + tf); if (occ & (1ULL << (tr * 8 + tf))) break; }
+    for (int tr = r + 1, tf = f - 1; tr <= 7 && tf >= 0; tr++, tf--) { attacks |= 1ULL << (tr * 8 + tf); if (occ & (1ULL << (tr * 8 + tf))) break; }
+    for (int tr = r - 1, tf = f + 1; tr >= 0 && tf <= 7; tr--, tf++) { attacks |= 1ULL << (tr * 8 + tf); if (occ & (1ULL << (tr * 8 + tf))) break; }
+    for (int tr = r - 1, tf = f - 1; tr >= 0 && tf >= 0; tr--, tf--) { attacks |= 1ULL << (tr * 8 + tf); if (occ & (1ULL << (tr * 8 + tf))) break; }
+
+    return attacks;
+}
+
+void fillRookAttacks() {
+    for (int sq = 0; sq < 64; sq++) {
+        int numBits = 64 - rookShifts[sq];
+        int numConfigs = 1 << numBits;
+
+        for (int index = 0; index < numConfigs; index++) {
+            Bitboard occ = indexToOccupancy(index, numBits, rookMasks[sq]);
+            Bitboard magicIndex = (occ * rookMagics[sq]) >> rookShifts[sq];
+            Bitboard attacks = computeRookAttacks(sq, occ);
+            rookAttacks[rookOffsets[sq] + magicIndex] = attacks;
+        }
+    }
+}
+void fillBishopAttacks() {
+    for (int sq = 0; sq < 64; sq++) {
+        int numBits = 64 - bishopShifts[sq];
+        int numConfigs = 1 << numBits;
+
+        for (int index = 0; index < numConfigs; index++) {
+            Bitboard occ = indexToOccupancy(index, numBits, bishopMasks[sq]);
+            Bitboard magicIndex = (occ * bishopMagics[sq]) >> bishopShifts[sq];
+            Bitboard attacks = computeBishopAttacks(sq, occ);
+            bishopAttacks[bishopOffsets[sq] + magicIndex] = attacks;
+        }
+    }
+}
+
+void init() {
+    for (int i = 0; i < 64; i++) {
+        if (i >= 56) pawnAttacks[WHITE][i] = 0;
+        else if (i % 8 == 0) pawnAttacks[WHITE][i] = 1ULL << (9 + i);
+        else if (i % 8 == 7) pawnAttacks[WHITE][i] = 1ULL << (7 + i);
+        else pawnAttacks[WHITE][i] = 1ULL << (9 + i) | 1ULL << (7 + i);
+    }
+
+    for (int i = 0; i < 64; i++) {
+        if (i <= 7) pawnAttacks[BLACK][i] = 0;
+        else if (i % 8 == 0) pawnAttacks[BLACK][i] = 1ULL << (i - 7);
+        else if (i % 8 == 7) pawnAttacks[BLACK][i] = 1ULL << (i - 9);
+        else pawnAttacks[BLACK][i] = (1ULL << (i - 7)) | (1ULL << (i - 9));
+    }
+
+    //Kings - horrible code I made but it works \_(-_-)_/
+    for (int i = 0; i < 64; i++) {
+        Bitboard temp_val = 1ULL << i;
+        if (i % 8 == 0 || i % 8 == 7 || i <= 7 || i >= 56) {
+            if (i % 8 == 0 ) {
+                if (i == 7) { kingAttacks[i] = temp_val << 1 | (temp_val << 8 | temp_val << 9); }
+                else if (i == 56) { kingAttacks[i] = temp_val << 1 | (temp_val >> 7 | temp_val >> 8); }
+                else { kingAttacks[i] = temp_val << 1 | ((temp_val << 8 | temp_val << 9) | (temp_val >> 7 | temp_val >> 8)); }
+            }
+            else if (i % 8 == 7) {
+                if (i == 56) { kingAttacks[i] = temp_val >> 1 | (temp_val >> 8 | temp_val >> 9); }
+                else if (i == 7) { kingAttacks[i] = temp_val >> 1 | (temp_val << 7 | temp_val << 8); }
+                else { kingAttacks[i] = temp_val >> 1 | ((temp_val << 7 | temp_val << 8) | (temp_val >> 8 | temp_val >> 9)); }
+            }
+            else if (i >= 1 && i <= 7 || i >= 56 && i <= 63) {
+                if (i >= 1 && i <= 7 ) { kingAttacks[i] = (temp_val << 1 | temp_val >> 1) | (temp_val << 7 | temp_val << 8 | temp_val << 9); }
+                else { kingAttacks[i] = (temp_val << 1 | temp_val >> 1) | (temp_val >> 7 | temp_val >> 8 | temp_val >> 9); }
+            }
+        }
+        else{ kingAttacks[i] = (temp_val >> 1 | temp_val << 1) | ((temp_val << 7 | temp_val << 8 | temp_val << 9) | (temp_val >> 7 | temp_val >> 8 | temp_val >> 9)); }
+    }
+
+    for (int sq = 0; sq < 64; sq++) {
+        knightAttacks[sq] = 0;
+        int r = sq / 8;
+        int f = sq % 8;
+
+        int moves[8][2] = {
+            {2, 1}, {2, -1}, {-2, 1}, {-2, -1},
+            {1, 2}, {1, -2}, {-1, 2}, {-1, -2}
+        };
+
+        for (int i = 0; i < 8; i++) {
+            int tr = r + moves[i][0];
+            int tf = f + moves[i][1];
+            if (tr >= 0 && tr <= 7 && tf >= 0 && tf <= 7) {
+                knightAttacks[sq] |= (1ULL << (tr * 8 + tf));
+            }
+        }
+    }
+
+    //Masks for sliding pieces
+    for (int i = 0; i < 64; i++) { //Rooks
+        int r = i / 8;
+        int f = i % 8;
+        uint64_t temp_mask = 0;
+        for (int up    = r + 1; up <= 6;   up++)   temp_mask |= 1ULL << (up * 8 + f);
+        for (int down  = r - 1; down >= 1; down--) temp_mask |= 1ULL << (down * 8 + f);
+        for (int right = f + 1; right <= 6; right++) temp_mask |= 1ULL << (r * 8 + right);
+        for (int left  = f - 1; left >= 1;  left--) temp_mask |= 1ULL << (r * 8 + left);
+        rookMasks[i] = temp_mask;
+    }
+    for (int i = 0; i < 64; i++) { //Bishops
+        int r = i / 8;
+        int f = i % 8;
+        uint64_t temp_mask = 0;
+        for (int tr = r + 1, tf = f + 1; tr <= 6 && tf <= 6; tr++, tf++) temp_mask |= 1ULL << (tr * 8 + tf);
+        for (int tr = r + 1, tf = f - 1; tr <= 6 && tf >= 1; tr++, tf--) temp_mask |= 1ULL << (tr * 8 + tf);
+        for (int tr = r - 1, tf = f + 1; tr >= 1 && tf <= 6; tr--, tf++) temp_mask |= 1ULL << (tr * 8 + tf);
+        for (int tr = r - 1, tf = f - 1; tr >= 1 && tf >= 1; tr--, tf--) temp_mask |= 1ULL << (tr * 8 + tf);
+        bishopMasks[i] = temp_mask;
+    }
+
+    rookOffsets[0] = 0;
+    bishopOffsets[0] = 0;
+    for (int i = 1; i < 64; i++) { rookOffsets[i] = rookOffsets[i - 1] + (1ULL << (64 - rookShifts[i - 1])); }
+    for (int i = 1; i < 64; i++) { bishopOffsets[i] = bishopOffsets[i - 1] + (1ULL << (64 - bishopShifts[i - 1])); }
+
+    fillBishopAttacks();
+    fillRookAttacks();
+
+    for (int sq1 = 0; sq1 < 64; sq1++) {
+        for (int sq2 = 0; sq2 < 64; sq2++) {
+            betweenTable[sq1][sq2] = 0;
+            if (sq1 == sq2) continue;
+            int r1 = sq1 / 8;
+            int r2 = sq2 / 8;
+            int f1 = sq1 % 8;
+            int f2 = sq2 % 8;
+
+            if (r1 == r2 && f1 != f2){
+                int minF = std::min(f1, f2);
+                int maxF = std::max(f1, f2);
+                for (int f = minF + 1; f < maxF; f++) {
+                    betweenTable[sq1][sq2] |= 1ULL << (r1 * 8 + f);
+                }
+            }
+
+            else if (r1 != r2 && f1 == f2) {
+                int minR = std::min(r1, r2);
+                int maxR = std::max(r1, r2);
+                for (int r = minR + 1; r < maxR; r++) {
+                    betweenTable[sq1][sq2] |= 1ULL << (r * 8 + f1);
+                }
+            }
+
+            else if (abs(r1 - r2) == abs(f1 - f2)) {
+                int dr = (r2 > r1) ? 1 : -1;
+                int df = (f2 > f1) ? 1 : -1;
+                int r = r1 + dr, f = f1 + df;
+                while (r != r2 && f != f2) {
+                    betweenTable[sq1][sq2] |= 1ULL << (r * 8 + f);
+                    r += dr; f += df;
+                }
+            }
+        }
+    }
 }

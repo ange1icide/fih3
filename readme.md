@@ -31,3 +31,5 @@
 🟨 = Not sure if it is as optimized as it can be
 
 🟥 = Needs a lot of work
+
+Also I want to personally, Say fuck you to my school for saying my code-server website is categorized as "games".
