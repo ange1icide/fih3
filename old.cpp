@@ -23,7 +23,7 @@
 |   6.  Quiescence search                              |
 |   7.  Move ordering                                  |
 |   8.  Search extensions                              |
-|   9.  Pruning                                        |
+|   9.  Pruning [Futility Purning etc.]                |
 |   10. Late move reductions                           |
 |   11. Internal iterative reductions                  |
 |   12. Razoring                                       |
@@ -37,8 +37,6 @@
 |   🟨 = Not sure if it is as optimized as it can be   |
 |   🟥 = Needs a lot of work                           |
 ========================================================
-go cry about the fact that this is all in one file
-im never touching c++ headers
 */
 
 
@@ -75,8 +73,8 @@ static const int indexTable[64] = {
     32,33,34,35,36,37,38,39,
     24,25,26,27,28,29,30,31,
     16,17,18,19,20,21,22,23,
-    8,9,10,11,12,13,14,15,
-    0,1,2, 3, 4, 5, 6, 7
+    8, 9, 10,11,12,13,14,15,
+    0, 1,  2, 3, 4, 5, 6, 7
 };
 
 enum PieceType {
@@ -135,7 +133,8 @@ const int castling_rights_update[64] = {
      7, 15, 15, 15,  3, 15, 15, 11  // Rank 8 (Black corners/king)
 };
 
-inline Move encodeMove(int to, int from, int piece, int capture, int promotion, bool enpassant, bool castle) { Move move = (Move)(to) | (Move)(from) << 6 | (Move)(piece + PIECE_OFFSET) << 12 | (Move)(capture + PIECE_OFFSET) << 16 | (Move)(promotion + PIECE_OFFSET) << 20 | (Move)(enpassant) << 24 | (Move)(castle) << 25;
+inline Move encodeMove(int to, int from, int piece, int capture, int promotion, bool enpassant, bool castle) {
+    Move move = (Move)(to) | (Move)(from) << 6 | (Move)(piece + PIECE_OFFSET) << 12 | (Move)(capture + PIECE_OFFSET) << 16 | (Move)(promotion + PIECE_OFFSET) << 20 | (Move)(enpassant) << 24 | (Move)(castle) << 25;
     return move;
 }
 
@@ -233,13 +232,13 @@ TTEntry& probe(uint64_t hash) {
 
 int TToccupancy() {
     int count = 0;
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10000; i++) {
         if (tt[i].key != 0) count++;
     }
     return count;
 }
 
-int full_move = 0;
+int full_move = 1;
 
 /* === Classes === */
 
@@ -304,6 +303,7 @@ class Board {
             castling_Rights = 0;
             enpassant_square = -1;
             halfmove_clock = 0;
+            full_move = 1;
             HistoryIndex = 0;
             for (int i = 0; i < 7; i++) { pieceCount[0][i] = 0; pieceCount[1][i] = 0; }
             for (int i = 0; i < 4096; i++) {
@@ -603,7 +603,6 @@ class Board {
                 else pawnAttacksB[i] = (1ULL << (i - 7)) | (1ULL << (i - 9));
             }
 
-            //Kings - horrible code I made but it works \_(-_-)_/
             for (int i = 0; i < 64; i++) {
                 Bitboard temp_val = 1ULL << i;
                 if (i % 8 == 0 || i % 8 == 7 || i <= 7 || i >= 56) {
@@ -763,7 +762,7 @@ class Board {
         void removePiece(int sq, int piece) {
             mailbox[sq] = 0;
             Color side = (piece > 0) ? WHITE : BLACK;
-            byTypeBB[abs(piece)] &= ~(1ULL << sq); byColorBB[side] &= ~(1ULL << sq); // piece count code I dont know if this work right now
+            byTypeBB[abs(piece)] &= ~(1ULL << sq); byColorBB[side] &= ~(1ULL << sq);
             pieceCount[side][abs(piece)] -= 1;
         }
         void placePiece(int sq, int piece) {
@@ -771,7 +770,7 @@ class Board {
             Color side = (piece > 0) ? WHITE : BLACK;
             byTypeBB[abs(piece)] |= bit;
             byColorBB[side] |= bit;
-            pieceCount[side][abs(piece)] += 1; // piece count code I dont know if this work right now
+            pieceCount[side][abs(piece)] += 1;
             mailbox[sq] = piece;
 
         }
@@ -855,6 +854,15 @@ class moveGen {
                 board.unmakeMove();
             }
             return nodes;
+        }
+
+        int perftNumbers[6] = {0, 20, 400, 8902, 197281, 4865609};
+
+        bool perftTest() {
+            for(int i = 1; i <= 5; i++) {
+                if(perft(i) != perftNumbers[i]) {std::cout << "Perft Doesnt Match, Expected: {" << perftNumbers[i] << "}" << " instead got {" << perft(i) << "}\n"; return false;}
+            }
+            return true;
         }
 
         template<GenType Type>
@@ -1188,29 +1196,155 @@ class moveGen {
         }
 };
 
-
 class Eval {
     public:
         Board& board;
-        Eval(Board& b) : board(b) {}
+        Eval(Board& b) : board(b) { buildPts(); }
+
+        int pawnPTS[64] = {
+            0,  0,  0,  0,  0,  0,  0,  0,
+            50, 50, 50, 50, 50, 50, 50, 50,
+            10, 10, 20, 30, 30, 20, 10, 10,
+            5,  5, 10, 25, 25, 10,  5,  5,
+            0,  0,  0, 20, 20,  0,  0,  0,
+            5, -5,-10,  0,  0,-10, -5,  5,
+            5, 10, 10,-20,-20, 10, 10,  5,
+            0,  0,  0,  0,  0,  0,  0,  0
+        };
+        int knightPTS[64] = {
+            -50,-40,-30,-30,-30,-30,-40,-50,
+            -40,-20,  0,  0,  0,  0,-20,-40,
+            -30,  0, 10, 15, 15, 10,  0,-30,
+            -30,  5, 15, 20, 20, 15,  5,-30,
+            -30,  0, 15, 20, 20, 15,  0,-30,
+            -30,  5, 10, 15, 15, 10,  5,-30,
+            -40,-20,  0,  5,  5,  0,-20,-40,
+            -50,-40,-30,-30,-30,-30,-40,-50
+        };
+        int bishopPTS[64] = {
+            -20,-10,-10,-10,-10,-10,-10,-20,
+            -10,  0,  0,  0,  0,  0,  0,-10,
+            -10,  0,  5, 10, 10,  5,  0,-10,
+            -10,  5,  5, 10, 10,  5,  5,-10,
+            -10,  0, 10, 10, 10, 10,  0,-10,
+            -10, 10, 10, 10, 10, 10, 10,-10,
+            -10,  5,  0,  0,  0,  0,  5,-10,
+            -20,-10,-10,-10,-10,-10,-10,-20
+        };
+        int rookPTS[64] = {
+            0,  0,  0,  0,  0,  0,  0,  0,
+            5, 10, 10, 10, 10, 10, 10,  5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            -5,  0,  0,  0,  0,  0,  0, -5,
+            0,  0,  0,  5,  5,  0,  0,  0
+        };
+        int queenPTS[64] = {
+            -20,-10,-10, -5, -5,-10,-10,-20,
+            -10,  0,  0,  0,  0,  0,  0,-10,
+            -10,  0,  5,  5,  5,  5,  0,-10,
+            -5,  0,  5,  5,  5,  5,  0, -5,
+            0,  0,  5,  5,  5,  5,  0, -5,
+            -10,  5,  5,  5,  5,  5,  0,-10,
+            -10,  0,  5,  0,  0,  0,  0,-10,
+            -20,-10,-10, -5, -5,-10,-10,-20
+        };
+        int kingPTS[64] = {
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -30,-40,-40,-50,-50,-40,-40,-30,
+            -20,-30,-30,-40,-40,-30,-30,-20,
+            -10,-20,-20,-20,-20,-20,-20,-10,
+            20, 20,  0,  0,  0,  0, 20, 20,
+            20, 30, 10,  0,  0, 10, 30, 20
+        };
+        int kingPTE[64] = {
+            -50,-40,-30,-20,-20,-30,-40,-50,
+            -30,-20,-10,  0,  0,-10,-20,-30,
+            -30,-10, 20, 30, 30, 20,-10,-30,
+            -30,-10, 30, 40, 40, 30,-10,-30,
+            -30,-10, 30, 40, 40, 30,-10,-30,
+            -30,-10, 20, 30, 30, 20,-10,-30,
+            -30,-30,  0,  0,  0,  0,-30,-30,
+            -50,-30,-30,-30,-30,-30,-30,-50
+        };
+
+        int indexTableWhite[64] = {
+            56, 57, 58, 59, 60, 61, 62, 63,
+            48, 49, 50, 51, 52, 53, 54, 55,
+            40, 41, 42, 43, 44, 45, 46, 47,
+            32, 33, 34, 35, 36, 37, 38, 39,
+            24, 25, 26, 27, 28, 29, 30, 31,
+            16, 17, 18, 19, 20, 21, 22, 23,
+            8,  9,  10, 11, 12, 13, 14, 15,
+            0,  1,  2,  3,  4,  5,  6,  7
+        };
+        int indexTableBlack[64] = {
+            7,  6,  5,  4,  3,  2,  1,  0,
+            15, 14, 13, 12, 11, 10,  9,  8,
+            23, 22, 21, 20, 19, 18, 17, 16,
+            31, 30, 29, 28, 27, 26, 25, 24,
+            39, 38, 37, 36, 35, 34, 33, 32,
+            47, 46, 45, 44, 43, 42, 41, 40,
+            55, 54, 53, 52, 51, 50, 49, 48,
+            63, 62, 61, 60, 59, 58, 57, 56
+        };
+
+        const int pawnVal = 100;
+        const int knightVal = 300;
+        const int bishopVal = 330;
+        const int rookVal = 500;
+        const int queenVal = 900;
+
+        int pts[2][7][64];
+
+        void buildPts() {
+            for (int sq; sq < 64; sq++) { pawnPTS[sq] += pawnVal; }
+            for (int sq; sq < 64; sq++) { knightPTS[sq] += knightVal; }
+            for (int sq; sq < 64; sq++) { bishopPTS[sq] += bishopVal; }
+            for (int sq; sq < 64; sq++) { rookPTS[sq] += rookVal; }
+            for (int sq; sq < 64; sq++) { queenPTS[sq] += queenVal; }
+
+            for (int sq = 0; sq < 64; sq++) {
+                pts[WHITE][1][sq] = pawnVal   + pawnPTS[indexTableWhite[sq]];
+                pts[WHITE][2][sq] = knightVal + knightPTS[indexTableWhite[sq]];
+                pts[WHITE][3][sq] = bishopVal + bishopPTS[indexTableWhite[sq]];
+                pts[WHITE][4][sq] = rookVal   + rookPTS[indexTableWhite[sq]];
+                pts[WHITE][5][sq] = queenVal  + queenPTS[indexTableWhite[sq]];
+                pts[WHITE][6][sq] = kingPTS[indexTableWhite[sq]];
+
+                pts[BLACK][1][sq] = pawnVal   + pawnPTS[indexTableBlack[sq]];
+                pts[BLACK][2][sq] = knightVal + knightPTS[indexTableBlack[sq]];
+                pts[BLACK][3][sq] = bishopVal + bishopPTS[indexTableBlack[sq]];
+                pts[BLACK][4][sq] = rookVal   + rookPTS[indexTableBlack[sq]];
+                pts[BLACK][5][sq] = queenVal  + queenPTS[indexTableBlack[sq]];
+                pts[BLACK][6][sq] = kingPTS[indexTableBlack[sq]];
+            }
+            std::cout << "[LOG] - Built PTS table\n";
+        }
 
         int evaluate() {
             int score = 0;
+            int p;
+            Color clr;
+            Bitboard occ = board.occupancy();
+            while (occ) {
+                int sq = __builtin_ctzll(occ);
+                occ &= occ - 1;
+                p = board.mailbox[sq];
+                int val = pts[(p > 0) ? WHITE : BLACK][abs(p)][sq];
+                score += (p > 0) ? val : -val;
 
-            score += board.pieceCount[WHITE][PAWN] * 100;
-            score += board.pieceCount[WHITE][KNIGHT] * 320;
-            score += board.pieceCount[WHITE][BISHOP] * 330;
-            score += board.pieceCount[WHITE][ROOK] * 500;
-            score += board.pieceCount[WHITE][QUEEN] * 900;
-
-            score -= board.pieceCount[BLACK][PAWN] * 100;
-            score -= board.pieceCount[BLACK][KNIGHT] * 320;
-            score -= board.pieceCount[BLACK][BISHOP] * 330;
-            score -= board.pieceCount[BLACK][ROOK] * 500;
-            score -= board.pieceCount[BLACK][QUEEN] * 900;
-
+            }
             return (board.side == WHITE) ? score : -score;
         }
+};
+
+class UCI {
+    public:
 };
 
 class Search {
@@ -1299,7 +1433,6 @@ class Search {
             return bestMove;
         }
 };
-
 
 /* ==== Main ====*/
 int main() {
